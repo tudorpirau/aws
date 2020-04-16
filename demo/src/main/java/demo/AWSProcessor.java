@@ -25,7 +25,7 @@ import com.opencsv.CSVReader;
 
 import demo.Response;
 
-public class saveUser implements RequestHandler<SQSEvent, Response> {
+public class AWSProcessor implements RequestHandler<SQSEvent, Response> {
    
   private DynamoDB dynamoDb;
   private String DYNAMODB_TABLE_NAME = "users";
@@ -38,6 +38,7 @@ public class saveUser implements RequestHandler<SQSEvent, Response> {
       Response response=new Response();
       for(SQSMessage msg : event.getRecords()){
           String json=msg.getBody();
+          String role=null;
           Gson gson = new Gson();
           User user= (User) gson.fromJson(json, User.class);
           AmazonS3ClientBuilder s3Client=AmazonS3ClientBuilder.standard();
@@ -54,7 +55,7 @@ public class saveUser implements RequestHandler<SQSEvent, Response> {
         			List<String[]> rows=reader.readAll();
         			for (String[] row: rows) {
         				if (Integer.parseInt(row[0])==user.getId()) {
-        					user.setName(row[1]);
+        					role=row[1];
         				}
         			}
         			s3.deleteObject(b.getName(), os.getKey());
@@ -66,7 +67,7 @@ public class saveUser implements RequestHandler<SQSEvent, Response> {
         	  }
           }
           
-	      if (persistData(user).getPutItemResult()!=null) {
+	      if (persistData(user, role).getPutItemResult()!=null) {
 	    	  
 	    	  response.setMessage(statusOk);
 	    	  
@@ -78,13 +79,22 @@ public class saveUser implements RequestHandler<SQSEvent, Response> {
       return response;
   }
 
-  private PutItemOutcome persistData(User user) 
+  private PutItemOutcome persistData(User user, String role) 
     throws ConditionalCheckFailedException {
+	  if (role==null) {
       return this.dynamoDb.getTable(DYNAMODB_TABLE_NAME)
         .putItem(
           new PutItemSpec().withItem(new Item()
             .withNumber("id", user.getId())
             .withString("name", user.getName())));
+	  } else {
+		  return this.dynamoDb.getTable(DYNAMODB_TABLE_NAME)
+	        .putItem(
+	          new PutItemSpec().withItem(new Item()
+	            .withNumber("id", user.getId())
+	            .withString("name", user.getName())
+	            .withString("role", role)));
+	  }
   }
 
   private void initDynamoDbClient() {
